@@ -92,8 +92,17 @@
                 <div v-else class="border-items">
                   <template v-for="(box, index) in store.cropBoxes" :key="box.id">
                     <div 
-                      :class="['border-item', { 'border-item--active': index === store.activeBoxIndex }]"
+                      :class="['border-item', {
+                        'border-item--active': index === store.activeBoxIndex,
+                        'border-item--drag-over': dragOverIndex === index
+                      }]"
+                      draggable="true"
                       @click="setActiveBox(index)"
+                      @dragstart="onDragStart($event, index)"
+                      @dragover.prevent="onBorderDragOver($event, index)"
+                      @dragleave="onBorderDragLeave"
+                      @dragend="onDragEnd"
+                      @drop.prevent="onBorderDrop($event, index)"
                     >
                       <span class="border-item__shape-icon">
                         <svg v-if="box.type === 'circle'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/></svg>
@@ -217,6 +226,27 @@
                       </button>
                     </div>
                   </div>
+                  
+                  <!-- 选中边框精确位置/尺寸 -->
+                  <template v-if="store.activeBoxIndex >= 0">
+                    <div class="prop-section-title">位置 &amp; 尺寸（选中边框）</div>
+                    <div class="prop-row-inline">
+                      <span class="prop-row__label">左</span>
+                      <input type="number" class="num-input num-input--sm" :value="Math.round(activeBoxValue.x)" :min="0" :max="activeBoxPropMax.x" @input="onActiveBoxPropChange('x', $event)" @change="onActiveBoxPropCommit">
+                    </div>
+                    <div class="prop-row-inline">
+                      <span class="prop-row__label">上</span>
+                      <input type="number" class="num-input num-input--sm" :value="Math.round(activeBoxValue.y)" :min="0" :max="activeBoxPropMax.y" @input="onActiveBoxPropChange('y', $event)" @change="onActiveBoxPropCommit">
+                    </div>
+                    <div class="prop-row-inline">
+                      <span class="prop-row__label">宽</span>
+                      <input type="number" class="num-input num-input--sm" :value="Math.round(activeBoxValue.width)" :min="1" :max="activeBoxPropMax.width" @input="onActiveBoxPropChange('width', $event)" @change="onActiveBoxPropCommit">
+                    </div>
+                    <div class="prop-row-inline">
+                      <span class="prop-row__label">高</span>
+                      <input type="number" class="num-input num-input--sm" :value="Math.round(activeBoxValue.height)" :min="1" :max="activeBoxPropMax.height" @input="onActiveBoxPropChange('height', $event)" @change="onActiveBoxPropCommit">
+                    </div>
+                  </template>
                 </template>
               </div>
             </div>
@@ -409,12 +439,14 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useEditorStore } from './stores/editor'
 import { useImageProcessor } from './composables/useImageProcessor'
 import { useUndoRedo } from './composables/useUndoRedo'
 import ImageEditor from './components/ImageEditor.vue'
 import ExportSettings from './components/ExportSettings.vue'
+import { validateBoxBounds } from './utils/boxValidator.js'
+import { globalCoordinateMapper } from './utils/coordinateMapper.js'
 import Pickr from '@simonwep/pickr'
 import '@simonwep/pickr/dist/themes/classic.min.css'
 
@@ -427,7 +459,7 @@ const zoomLevel = ref(1)
 
 // 全局边框设置
 const globalBorderColor = ref('#5e6ad2')
-const globalBorderWidth = ref(4)
+const globalBorderWidth = ref(2)
 const globalBorderRadius = ref(8)
 const globalShadowEnabled = ref(false)
 const globalShadowColor = ref('rgba(0,0,0,0.5)')
@@ -452,6 +484,30 @@ const showResetConfirm = ref(false)
 // 拖拽上传
 const isDragOver = ref(false)
 let dragCounter = 0
+
+// 边框列表拖拽排序
+const dragOverIndex = ref(-1)
+
+// 选中边框的实时值（用于手动输入）
+const activeBoxValue = computed(() => {
+  if (store.activeBoxIndex >= 0 && store.activeBoxIndex < store.cropBoxes.length) {
+    return store.cropBoxes[store.activeBoxIndex]
+  }
+  return { x: 0, y: 0, width: 0, height: 0 }
+})
+
+// 输入框的动态最大值：确保边框不超出图片边界
+const activeBoxPropMax = computed(() => {
+  const box = store.activeBoxIndex >= 0 ? store.cropBoxes[store.activeBoxIndex] : null
+  const image = store.currentImage
+  if (!box || !image) return { x: 99999, y: 99999, width: 99999, height: 99999 }
+  return {
+    x: Math.max(0, image.width - Math.max(1, box.width)),
+    y: Math.max(0, image.height - Math.max(1, box.height)),
+    width: Math.max(1, image.width - Math.max(0, box.x)),
+    height: Math.max(1, image.height - Math.max(0, box.y))
+  }
+})
 const onDragOver = () => {
   dragCounter++
   isDragOver.value = true
@@ -505,7 +561,7 @@ let gradientStartColorInstance = null
 let gradientMiddleColorInstance = null
 let gradientEndColorInstance = null
 
-const { uploadImage, addBox, setActiveBox, removeBox, clearAllBoxes, reset: storeReset } = store
+const { uploadImage, addBox, setActiveBox, removeBox, clearAllBoxes, moveBox, reset: storeReset } = store
 const { processImage, downloadImage, generateFilename, setExportConfig, debugCoordinateConversion } = imageProcessor
 const imageEditorRef = ref(null)
 
@@ -527,22 +583,31 @@ const PICKR_COMPONENTS = {
 
 const createPickrInstance = (el, defaultColor, onSave, extraOptions = {}) => {
   if (!el) return null
-  const instance = Pickr.create({
-    el,
-    theme: 'classic',
-    default: defaultColor,
-    components: PICKR_COMPONENTS,
-    ...extraOptions
-  })
-  instance.on('save', (color) => {
-    const rgbaArr = color.toRGBA()
-    if (rgbaArr && rgbaArr.length === 4) {
-      const [r, g, b, a] = rgbaArr
-      onSave(`rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${a})`)
-    }
-    instance.hide()
-  })
-  return instance
+  try {
+    const instance = Pickr.create({
+      el,
+      theme: 'classic',
+      default: defaultColor,
+      components: PICKR_COMPONENTS,
+      ...extraOptions
+    })
+    instance.on('save', (color) => {
+      try {
+        const rgbaArr = color.toRGBA()
+        if (rgbaArr && rgbaArr.length === 4) {
+          const [r, g, b, a] = rgbaArr
+          onSave(`rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${a})`)
+        }
+      } catch (e) {
+        console.warn('Pickr 颜色值转换失败:', e)
+      }
+      instance.hide()
+    })
+    return instance
+  } catch (e) {
+    console.warn('Pickr 颜色选择器初始化失败:', e)
+    return null
+  }
 }
 
 const initShadowColorPicker = () => {
@@ -741,14 +806,120 @@ const toggleBoxLock = (index) => {
   }
 }
 
+// 边框列表拖拽排序
+let dragSrcIndex = null
+
+const onDragStart = (event, index) => {
+  dragSrcIndex = index
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(index))
+  event.target.classList.add('border-item--dragging')
+}
+
+const onBorderDragOver = (event, index) => {
+  if (dragSrcIndex === null || dragSrcIndex === index) return
+  event.dataTransfer.dropEffect = 'move'
+  dragOverIndex.value = index
+}
+
+const onBorderDragLeave = () => {
+  dragOverIndex.value = -1
+}
+
+const onBorderDrop = (event, index) => {
+  dragOverIndex.value = -1
+  if (dragSrcIndex === null || dragSrcIndex === index) return
+  moveBox(dragSrcIndex, index)
+  dragSrcIndex = null
+  saveState({ boxes: JSON.parse(JSON.stringify(store.cropBoxes)), imageMeta: store.currentImage ? { url: store.currentImage.url, width: store.currentImage.width, height: store.currentImage.height, name: store.currentImage.name } : null })
+}
+
+const onDragEnd = (event) => {
+  dragOverIndex.value = -1
+  dragSrcIndex = null
+  event.target.classList.remove('border-item--dragging')
+}
+
+// 手动精确输入位置/尺寸
+const onActiveBoxPropChange = (prop, event) => {
+  const val = Number(event.target.value)
+  if (isNaN(val)) return
+  if (store.activeBoxIndex < 0) return
+
+  // 负值拦截：提示用户并阻止写入
+  if (val < 0) {
+    const labels = { x: '左侧距离', y: '顶部距离', width: '边框宽度', height: '边框高度' }
+    showToast(`${labels[prop] || prop} 不能为负数`, 'error')
+    return
+  }
+
+  // 边界溢出保护：确保调整后边框不超出图片右/下边界
+  const box = store.cropBoxes[store.activeBoxIndex]
+  const image = store.currentImage
+  if (box && image) {
+    if (prop === 'x' && val + Math.max(1, box.width) > image.width) {
+      showToast(`左侧距离不能超过 ${Math.max(0, image.width - Math.max(1, box.width))}px（超出图片右边界）`, 'error')
+      return
+    }
+    if (prop === 'y' && val + Math.max(1, box.height) > image.height) {
+      showToast(`顶部距离不能超过 ${Math.max(0, image.height - Math.max(1, box.height))}px（超出图片下边界）`, 'error')
+      return
+    }
+    if (prop === 'width' && Math.max(0, box.x) + val > image.width) {
+      showToast(`边框宽度不能超过 ${Math.max(1, image.width - Math.max(0, box.x))}px（超出图片右边界）`, 'error')
+      return
+    }
+    if (prop === 'height' && Math.max(0, box.y) + val > image.height) {
+      showToast(`边框高度不能超过 ${Math.max(1, image.height - Math.max(0, box.y))}px（超出图片下边界）`, 'error')
+      return
+    }
+  }
+
+  store.updateBox(store.activeBoxIndex, { [prop]: val })
+}
+
+const onActiveBoxPropCommit = () => {
+  if (store.activeBoxIndex < 0) return
+
+  // 提交时做完整边界校验（自动修正模式）
+  const box = store.cropBoxes[store.activeBoxIndex]
+  const image = store.currentImage
+  if (!box || !image) return
+
+  const result = validateBoxBounds(
+    { x: box.x, y: box.y, width: box.width, height: box.height },
+    { imageWidth: image.width, imageHeight: image.height },
+    { autoCorrect: true }
+  )
+
+  // 如果存在错误但已自动修正，静默写入修正值
+  if (result.corrected) {
+    const { x, y, width, height } = result.corrected
+    const hasChanges = x !== box.x || y !== box.y || width !== box.width || height !== box.height
+    if (hasChanges) {
+      store.updateBox(store.activeBoxIndex, { x, y, width, height })
+      showToast('边框位置/尺寸已自动修正到图片范围内', 'info')
+    }
+  }
+
+  saveState({
+    boxes: JSON.parse(JSON.stringify(store.cropBoxes)),
+    imageMeta: store.currentImage ? {
+      url: store.currentImage.url,
+      width: store.currentImage.width,
+      height: store.currentImage.height,
+      name: store.currentImage.name
+    } : null
+  })
+}
+
 const getDisplaySize = () => {
   if (imageEditorRef.value?.getImageDisplaySize) {
     return imageEditorRef.value.getImageDisplaySize()
   }
-  const previewImg = document.querySelector('.canvas-container img')
-  if (previewImg) {
-    const cs = window.getComputedStyle(previewImg)
-    return { width: parseFloat(cs.width), height: parseFloat(cs.height) }
+  // 回退：使用坐标映射器的预览尺寸（不受 CSS zoom/transform 影响）
+  if (globalCoordinateMapper.previewSize.width > 0) {
+    return { width: globalCoordinateMapper.previewSize.width, height: globalCoordinateMapper.previewSize.height }
   }
   if (store.currentImage) {
     return { width: store.currentImage.width, height: store.currentImage.height }
@@ -762,6 +933,7 @@ const quickExport = async () => {
     return
   }
   
+  let unwatch = null
   try {
     isExporting.value = true
     exportProgress.value = 0
@@ -772,7 +944,7 @@ const quickExport = async () => {
     debugCoordinateConversion(store.currentImage, store.cropBoxes)
     
     // 监听真实的导出进度
-    const unwatch = watch(() => imageProcessor.progress.value, (v) => {
+    unwatch = watch(() => imageProcessor.progress.value, (v) => {
       exportProgress.value = v
     })
     
@@ -780,7 +952,6 @@ const quickExport = async () => {
     const filename = generateFilename(store.currentImage)
     downloadImage(blob, filename, 'png')
     
-    unwatch()
     exportProgress.value = 100
     showToast('导出成功！', 'success')
     
@@ -793,10 +964,13 @@ const quickExport = async () => {
     showToast('导出失败: ' + (err.message || '未知错误'), 'error')
     isExporting.value = false
     exportProgress.value = 0
+  } finally {
+    if (unwatch) unwatch()
   }
 }
 
 const handleExportConfirm = async (exportConfig) => {
+  let unwatch = null
   try {
     isExporting.value = true
     exportProgress.value = 0
@@ -804,7 +978,7 @@ const handleExportConfirm = async (exportConfig) => {
     const displaySize = getDisplaySize()
     if (!displaySize) throw new Error('无法获取图片显示尺寸')
     
-    const unwatch = watch(() => imageProcessor.progress.value, (v) => {
+    unwatch = watch(() => imageProcessor.progress.value, (v) => {
       exportProgress.value = v
     })
     
@@ -812,7 +986,6 @@ const handleExportConfirm = async (exportConfig) => {
     const filename = exportConfig.filename || generateFilename(store.currentImage)
     downloadImage(blob, filename, exportConfig.format)
     
-    unwatch()
     exportProgress.value = 100
     showExportSettings.value = false
     showToast('导出成功！', 'success')
@@ -826,6 +999,8 @@ const handleExportConfirm = async (exportConfig) => {
     showToast('导出失败: ' + (err.message || '未知错误'), 'error')
     isExporting.value = false
     exportProgress.value = 0
+  } finally {
+    if (unwatch) unwatch()
   }
 }
 
@@ -1141,6 +1316,11 @@ onBeforeUnmount(() => {
 .border-item:hover { background: #f9fafb; }
 .border-item--active { background: #ecedf8; }
 .border-item--active .border-item__shape-icon { color: #5e6ad2; }
+.border-item--dragging { opacity: 0.4; }
+.border-item--drag-over {
+  border-top: 2px solid var(--accent-color, #5e6ad2);
+  border-radius: 0;
+}
 
 .border-item__shape-icon { width: 16px; height: 16px; color: #7c829a; flex-shrink: 0; }
 .border-item__shape-icon svg { width: 16px; height: 16px; }
@@ -1269,6 +1449,35 @@ onBeforeUnmount(() => {
 }
 .prop-row__value {
   display: flex; align-items: center; gap: 6px;
+}
+
+/* ---- Section Title ---- */
+.prop-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 12px 0 4px;
+  padding-top: 8px;
+  border-top: 1px solid #e8eaed;
+}
+
+/* ---- Inline Prop Row (for manual inputs) ---- */
+.prop-row-inline {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  margin-bottom: 2px;
+}
+.prop-row-inline .prop-row__label {
+  width: 16px;
+  font-weight: 600;
+  color: #9ca3af;
+}
+.prop-row-inline .num-input--sm {
+  width: 80px;
+  text-align: center;
 }
 
 /* ---- Slider Group ---- */

@@ -14,6 +14,8 @@
           v-if="store.currentImage" 
           :src="store.currentImage.url" 
           :style="imageStyle"
+          draggable="false"
+          @dragstart.prevent
           @load="onImageLoad"
           ref="imageRef"
         />
@@ -88,6 +90,39 @@
         <svg class="context-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
         <span>复制边框</span>
         <span class="context-shortcut">Ctrl+D</span>
+      </div>
+      <div class="context-menu-divider"></div>
+      <div 
+        class="context-menu-item" 
+        :class="{ 'disabled': selectedBoxIndex < 0 }"
+        @click="handleContextMenuAction('layer-top')"
+      >
+        <span>置顶</span>
+        <span class="context-shortcut">⌘⌥↑</span>
+      </div>
+      <div 
+        class="context-menu-item" 
+        :class="{ 'disabled': selectedBoxIndex < 0 }"
+        @click="handleContextMenuAction('layer-up')"
+      >
+        <span>上移一层</span>
+        <span class="context-shortcut">⌘↑</span>
+      </div>
+      <div 
+        class="context-menu-item" 
+        :class="{ 'disabled': selectedBoxIndex < 0 }"
+        @click="handleContextMenuAction('layer-down')"
+      >
+        <span>下移一层</span>
+        <span class="context-shortcut">⌘↓</span>
+      </div>
+      <div 
+        class="context-menu-item" 
+        :class="{ 'disabled': selectedBoxIndex < 0 }"
+        @click="handleContextMenuAction('layer-bottom')"
+      >
+        <span>置底</span>
+        <span class="context-shortcut">⌘⌥↓</span>
       </div>
     </div>
   </Teleport>
@@ -560,6 +595,30 @@ const handleContextMenuAction = (action) => {
         emit('update')
       }
       break
+    case 'layer-top':
+      if (selectedBoxIndex.value >= 0) {
+        store.moveToTop(selectedBoxIndex.value)
+        emit('update')
+      }
+      break
+    case 'layer-up':
+      if (selectedBoxIndex.value > 0) {
+        store.moveUp(selectedBoxIndex.value)
+        emit('update')
+      }
+      break
+    case 'layer-down':
+      if (selectedBoxIndex.value < store.cropBoxes.length - 1) {
+        store.moveDown(selectedBoxIndex.value)
+        emit('update')
+      }
+      break
+    case 'layer-bottom':
+      if (selectedBoxIndex.value >= 0) {
+        store.moveToBottom(selectedBoxIndex.value)
+        emit('update')
+      }
+      break
   }
 }
 
@@ -625,6 +684,13 @@ defineExpose({
 .canvas-container img {
   display: block;
   transition: all 0.3s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  pointer-events: auto;
 }
 
 /* 响应式设计 */

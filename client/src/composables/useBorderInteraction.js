@@ -211,42 +211,54 @@ export function useBorderInteraction() {
     const minSize = 20 // 最小尺寸
     const containerWidth = getContainerWidth()
     const containerHeight = getContainerHeight()
-    const maxWidth = containerWidth
-    const maxHeight = containerHeight
+    
+    // 各方向的可用空间
+    const maxWidthFromX = containerWidth - originalData.x   // 从 x 到右边界
+    const maxHeightFromY = containerHeight - originalData.y // 从 y 到下边界
+    const maxWidthToLeft = originalData.x + originalData.width  // 从右边缘到左边界
+    const maxHeightToTop = originalData.y + originalData.height // 从下边缘到上边界
     
     switch (handle) {
       case 'se':
-        newWidth = Math.max(minSize, Math.min(maxWidth, originalData.width + deltaX))
-        newHeight = Math.max(minSize, Math.min(maxHeight, originalData.height + deltaY))
+        // 向右/右下拉伸：x/y 不变，宽高不能超出右/下边界
+        newWidth = Math.max(minSize, Math.min(maxWidthFromX, originalData.width + deltaX))
+        newHeight = Math.max(minSize, Math.min(maxHeightFromY, originalData.height + deltaY))
         break
       case 'sw':
-        newWidth = Math.max(minSize, Math.min(maxWidth, originalData.width - deltaX))
-        newHeight = Math.max(minSize, Math.min(maxHeight, originalData.height + deltaY))
+        // 向左下拉伸：x 可左移，但不能为负；宽不能超出右边界
+        newWidth = Math.max(minSize, Math.min(maxWidthToLeft, originalData.width - deltaX))
+        newHeight = Math.max(minSize, Math.min(maxHeightFromY, originalData.height + deltaY))
         newX = Math.max(0, originalData.x + originalData.width - newWidth)
         break
       case 'ne':
-        newWidth = Math.max(minSize, Math.min(maxWidth, originalData.width + deltaX))
-        newHeight = Math.max(minSize, Math.min(maxHeight, originalData.height - deltaY))
+        // 向右上拉伸：y 可上移，但不能为负；高不能超出下边界
+        newWidth = Math.max(minSize, Math.min(maxWidthFromX, originalData.width + deltaX))
+        newHeight = Math.max(minSize, Math.min(maxHeightToTop, originalData.height - deltaY))
         newY = Math.max(0, originalData.y + originalData.height - newHeight)
         break
       case 'nw':
-        newWidth = Math.max(minSize, Math.min(maxWidth, originalData.width - deltaX))
-        newHeight = Math.max(minSize, Math.min(maxHeight, originalData.height - deltaY))
+        // 向左上拉伸：x/y 可移动但不能为负
+        newWidth = Math.max(minSize, Math.min(maxWidthToLeft, originalData.width - deltaX))
+        newHeight = Math.max(minSize, Math.min(maxHeightToTop, originalData.height - deltaY))
         newX = Math.max(0, originalData.x + originalData.width - newWidth)
         newY = Math.max(0, originalData.y + originalData.height - newHeight)
         break
       case 'e':
-        newWidth = Math.max(minSize, Math.min(maxWidth, originalData.width + deltaX))
+        // 仅向右拉伸：x 不变，宽不能超出右边界
+        newWidth = Math.max(minSize, Math.min(maxWidthFromX, originalData.width + deltaX))
         break
       case 'w':
-        newWidth = Math.max(minSize, Math.min(maxWidth, originalData.width - deltaX))
+        // 仅向左拉伸：x 可左移但不能为负
+        newWidth = Math.max(minSize, Math.min(maxWidthToLeft, originalData.width - deltaX))
         newX = Math.max(0, originalData.x + originalData.width - newWidth)
         break
       case 's':
-        newHeight = Math.max(minSize, Math.min(maxHeight, originalData.height + deltaY))
+        // 仅向下拉伸：y 不变，高不能超出下边界
+        newHeight = Math.max(minSize, Math.min(maxHeightFromY, originalData.height + deltaY))
         break
       case 'n':
-        newHeight = Math.max(minSize, Math.min(maxHeight, originalData.height - deltaY))
+        // 仅向上拉伸：y 可上移但不能为负
+        newHeight = Math.max(minSize, Math.min(maxHeightToTop, originalData.height - deltaY))
         newY = Math.max(0, originalData.y + originalData.height - newHeight)
         break
     }
@@ -262,13 +274,13 @@ export function useBorderInteraction() {
           // 水平变化为主，调整高度
           newHeight = newWidth / targetAspectRatio
           if (handle.includes('n')) {
-            newY = originalData.y + originalData.height - newHeight
+            newY = Math.max(0, originalData.y + originalData.height - newHeight)
           }
         } else {
           // 垂直变化为主，调整宽度
           newWidth = newHeight * targetAspectRatio
           if (handle.includes('w')) {
-            newX = originalData.x + originalData.width - newWidth
+            newX = Math.max(0, originalData.x + originalData.width - newWidth)
           }
         }
       }
@@ -287,16 +299,26 @@ export function useBorderInteraction() {
   const applyBoundaryConstraints = (x, y, dimensions) => {
     const containerWidth = getContainerWidth()
     const containerHeight = getContainerHeight()
-    
-    // 确保不超出容器边界
-    const maxX = containerWidth - dimensions.width
-    const maxY = containerHeight - dimensions.height
-    
+    const minSize = 20
+
+    // 钳制位置：确保不超出容器边界
+    const maxX = Math.max(0, containerWidth - Math.max(minSize, dimensions.width))
+    const maxY = Math.max(0, containerHeight - Math.max(minSize, dimensions.height))
+
+    const clampedX = Math.max(0, Math.min(x, maxX))
+    const clampedY = Math.max(0, Math.min(y, maxY))
+
+    // 钳制尺寸：确保不超出右/下边界
+    const maxW = containerWidth - clampedX
+    const maxH = containerHeight - clampedY
+    const clampedW = Math.max(minSize, Math.min(dimensions.width, maxW))
+    const clampedH = Math.max(minSize, Math.min(dimensions.height, maxH))
+
     return {
-      x: Math.max(0, Math.min(x, maxX)),
-      y: Math.max(0, Math.min(y, maxY)),
-      width: dimensions.width,
-      height: dimensions.height
+      x: clampedX,
+      y: clampedY,
+      width: clampedW,
+      height: clampedH
     }
   }
 

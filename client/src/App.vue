@@ -108,7 +108,7 @@
                         <svg v-if="box.type === 'circle'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/></svg>
                         <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
                       </span>
-                      <span class="border-item__name">边框 {{ index + 1 }}</span>
+                      <span class="border-item__name">{{ box.label }}</span>
                       <span class="border-item__color-swatch" :style="{ background: box.color }"></span>
                       <button 
                         :class="['border-item__lock-btn', { 'border-item__lock-btn--locked': box.lockAspectRatio }]"

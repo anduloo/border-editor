@@ -120,6 +120,7 @@ export class CoordinateMapper {
     // 显式构造，仅转换空间属性；borderWidth/borderRadius/borderColor 等保持不变
     return {
       id: previewBox.id,
+      label: previewBox.label,
       type: previewBox.type,
       color: previewBox.color,
       x: originalCoords.x,
@@ -132,7 +133,8 @@ export class CoordinateMapper {
       shadowColor: previewBox.shadowColor,
       shadowX: previewBox.shadowX,
       shadowY: previewBox.shadowY,
-      shadowBlur: previewBox.shadowBlur
+      shadowBlur: previewBox.shadowBlur,
+      lockAspectRatio: previewBox.lockAspectRatio
     }
   }
 
@@ -148,6 +150,7 @@ export class CoordinateMapper {
     // 显式构造，仅转换空间属性；borderWidth/borderRadius/borderColor 等保持不变
     return {
       id: originalBox.id,
+      label: originalBox.label,
       type: originalBox.type,
       color: originalBox.color,
       x: previewCoords.x,
@@ -160,7 +163,8 @@ export class CoordinateMapper {
       shadowColor: originalBox.shadowColor,
       shadowX: originalBox.shadowX,
       shadowY: originalBox.shadowY,
-      shadowBlur: originalBox.shadowBlur
+      shadowBlur: originalBox.shadowBlur,
+      lockAspectRatio: originalBox.lockAspectRatio
     }
   }
 

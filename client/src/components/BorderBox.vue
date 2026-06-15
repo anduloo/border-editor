@@ -191,13 +191,16 @@ watch(() => props.lockAspectRatio, (locked) => {
 
 const boxStyle = computed(() => {
   const { x, y, width, height } = localBox.value
+  // 使用数组索引作为基础 zIndex，确保层级顺序与列表顺序严格一致
+  // 活跃边框额外提升到更高层级，避免被其他边框遮挡
+  const baseZIndex = props.index + 1
   return {
     position: 'absolute',
     left: `${x}px`,
     top: `${y}px`,
     width: `${width}px`,
     height: `${height}px`,
-    zIndex: props.isActive ? 10 : 1
+    zIndex: props.isActive ? baseZIndex + 1000 : baseZIndex
   }
 })
 

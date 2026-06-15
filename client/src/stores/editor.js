@@ -8,6 +8,7 @@ export const useEditorStore = defineStore('editor', () => {
   const activeBoxIndex = ref(-1)
   const isLoading = ref(false)
   const error = ref(null)
+  const nextLabelNumber = ref(1)
 
   // 计算属性
   const hasImage = computed(() => currentImage.value !== null)
@@ -74,6 +75,7 @@ export const useEditorStore = defineStore('editor', () => {
 
     let newBox = {
       id: Date.now() + Math.random(),
+      label: `边框 ${nextLabelNumber.value++}`,
       type,
       color: options.color || color,
       x: options.x || 100,

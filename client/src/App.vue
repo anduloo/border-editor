@@ -467,6 +467,10 @@ const globalShadowX = ref(0)
 const globalShadowY = ref(0)
 const globalShadowBlur = ref(10)
 
+// 手动输入缓存：@input 期间暂存用户输入，@change 时一次性提交到 store
+const pendingBoxProp = ref(null)   // 'x' | 'y' | 'width' | 'height'
+const pendingBoxVal = ref(null)    // 用户输入的值
+
 // 渐变边框设置
 const gradientStyle = ref('linear')
 const gradientAngle = ref(45)
@@ -875,11 +879,21 @@ const onActiveBoxPropChange = (prop, event) => {
     }
   }
 
-  store.updateBox(store.activeBoxIndex, { [prop]: val })
+  // 缓存有效输入值，等 @change 时一次性提交到 store
+  // 避免每次按键触发 clampToImageBounds 破坏中间输入状态
+  pendingBoxProp.value = prop
+  pendingBoxVal.value = val
 }
 
 const onActiveBoxPropCommit = () => {
   if (store.activeBoxIndex < 0) return
+
+  // 先提交用户在 @input 期间缓存的值到 store
+  if (pendingBoxProp.value && pendingBoxVal.value !== null) {
+    store.updateBox(store.activeBoxIndex, { [pendingBoxProp.value]: pendingBoxVal.value })
+    pendingBoxProp.value = null
+    pendingBoxVal.value = null
+  }
 
   // 提交时做完整边界校验（自动修正模式）
   const box = store.cropBoxes[store.activeBoxIndex]

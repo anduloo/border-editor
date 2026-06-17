@@ -208,7 +208,7 @@ export function useBorderInteraction() {
     let newWidth = originalData.width
     let newHeight = originalData.height
     
-    const minSize = 20 // 最小尺寸
+    const minSize = 1 // 最小尺寸，与 clampToImageBounds / validateBoxBounds 统一
     const containerWidth = getContainerWidth()
     const containerHeight = getContainerHeight()
     
@@ -299,7 +299,7 @@ export function useBorderInteraction() {
   const applyBoundaryConstraints = (x, y, dimensions) => {
     const containerWidth = getContainerWidth()
     const containerHeight = getContainerHeight()
-    const minSize = 20
+    const minSize = 1
 
     // 钳制位置：确保不超出容器边界
     const maxX = Math.max(0, containerWidth - Math.max(minSize, dimensions.width))

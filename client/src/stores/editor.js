@@ -59,7 +59,7 @@ export const useEditorStore = defineStore('editor', () => {
    */
   const clampToImageBounds = (box, image) => {
     if (!image || !image.width || !image.height) return box
-    const minSize = 10
+    const minSize = 1
     // x/y 的上限 = 图片尺寸 - max(minSize, 实际宽高)，保护尺寸不被挤压
     const clampedX = Math.max(0, Math.min(box.x, image.width - Math.max(minSize, box.width)))
     const clampedY = Math.max(0, Math.min(box.y, image.height - Math.max(minSize, box.height)))
